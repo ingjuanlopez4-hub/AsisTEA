@@ -4,14 +4,14 @@ import '../config/theme.dart';
 class ChatBubble extends StatelessWidget {
   final String message;
   final bool isUser;
-  final DateTime timestamp;
+  final DateTime? timestamp;
   final bool isTyping;
 
   const ChatBubble({
     super.key,
     required this.message,
     required this.isUser,
-    required this.timestamp,
+    this.timestamp,
     this.isTyping = false,
   });
 
@@ -90,16 +90,18 @@ class ChatBubble extends StatelessWidget {
             height: 1.4,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          _formatTime(timestamp),
-          style: TextStyle(
-            fontSize: 11,
-            color: isUser
-                ? Colors.white.withOpacity(0.7)
-                : (isDark ? Colors.grey[400] : AppTheme.textSecondary),
+        if (timestamp != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            _formatTime(timestamp),
+            style: TextStyle(
+              fontSize: 11,
+              color: isUser
+                  ? Colors.white.withOpacity(0.7)
+                  : (isDark ? Colors.grey[400] : AppTheme.textSecondary),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -129,7 +131,8 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  String _formatTime(DateTime time) {
+  String _formatTime(DateTime? time) {
+    if (time == null) return '';
     final hour = time.hour.toString().padLeft(2, '0');
     final minute = time.minute.toString().padLeft(2, '0');
     return '$hour:$minute';

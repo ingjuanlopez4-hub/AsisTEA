@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../models/child_profile.dart';
+import '../models/api_config.dart';
 import '../services/storage_service.dart';
+import '../services/llm_service.dart';
 
 class AjustesScreen extends StatefulWidget {
   const AjustesScreen({super.key});
@@ -13,20 +15,240 @@ class AjustesScreen extends StatefulWidget {
 class _AjustesScreenState extends State<AjustesScreen> {
   final StorageService _storage = StorageService();
   List<ChildProfile> _children = [];
+  ApiConfig _apiConfig = const ApiConfig();
   bool _isLoading = true;
+  bool _llmConnected = false;
+  bool _checkingLlm = false;
 
   @override
   void initState() {
     super.initState();
-    _loadProfiles();
+    _loadData();
   }
 
-  Future<void> _loadProfiles() async {
+  Future<void> _loadData() async {
     final profiles = await _storage.getChildProfiles();
+    final config = await _storage.getApiConfig();
     setState(() {
       _children = profiles;
+      _apiConfig = config;
       _isLoading = false;
     });
+    _checkLlmConnection();
+  }
+
+  Future<void> _checkLlmConnection() async {
+    setState(() => _checkingLlm = true);
+    final service = LLMService(config: _apiConfig);
+    final ok = await service.checkHealth();
+    setState(() {
+      _llmConnected = ok;
+      _checkingLlm = false;
+    });
+  }
+
+  Future<void> _showLlmConfigDialog() async {
+    final baseUrlController =
+        TextEditingController(text: _apiConfig.baseUrl);
+    final modelController =
+        TextEditingController(text: _apiConfig.model);
+    final apiKeyController =
+        TextEditingController(text: _apiConfig.apiKey);
+    double temperature = _apiConfig.temperature;
+    int maxTokens = _apiConfig.maxTokens;
+    String mode = _apiConfig.mode;
+
+    final result = await showDialog<ApiConfig>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('Configurar LLM'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Configura el servidor de IA local o remoto.',
+                      style: TextStyle(fontSize: 13, color: AppTheme.textSecondary),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Modo
+                    const Text('Modo',
+                        style: TextStyle(fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 6),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'local', label: Text('Local')),
+                        ButtonSegment(value: 'cloud', label: Text('Cloud')),
+                      ],
+                      selected: {mode},
+                      onSelectionChanged: (v) {
+                        setDialogState(() => mode = v.first);
+                      },
+                    ),
+                    const SizedBox(height: 16),
+
+                    // URL Base
+                    TextField(
+                      controller: baseUrlController,
+                      decoration: const InputDecoration(
+                        labelText: 'URL Base',
+                        hintText: 'http://localhost:11434/v1',
+                        helperText: 'Ej: http://localhost:11434/v1 (Ollama)',
+                        helperMaxLines: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Modelo
+                    TextField(
+                      controller: modelController,
+                      decoration: const InputDecoration(
+                        labelText: 'Modelo',
+                        hintText: 'llama3.2',
+                        helperText: 'Ej: llama3.2, phi3, gpt-4o-mini',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // API Key (solo visible en modo cloud)
+                    if (mode == 'cloud')
+                      TextField(
+                        controller: apiKeyController,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: 'API Key',
+                          hintText: 'sk-...',
+                        ),
+                      ),
+
+                    const SizedBox(height: 16),
+
+                    // Temperatura
+                    Row(
+                      children: [
+                        const Text('Temperatura: ',
+                            style: TextStyle(fontWeight: FontWeight.w500)),
+                        Expanded(
+                          child: Slider(
+                            value: temperature,
+                            min: 0.0,
+                            max: 1.0,
+                            divisions: 10,
+                            label: temperature.toStringAsFixed(1),
+                            onChanged: (v) {
+                              setDialogState(() => temperature = v);
+                            },
+                          ),
+                        ),
+                        Text(temperature.toStringAsFixed(1)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Max tokens
+                    Row(
+                      children: [
+                        const Text('Max tokens: ',
+                            style: TextStyle(fontWeight: FontWeight.w500)),
+                        Expanded(
+                          child: Slider(
+                            value: maxTokens.toDouble(),
+                            min: 100,
+                            max: 4000,
+                            divisions: 39,
+                            label: maxTokens.toString(),
+                            onChanged: (v) {
+                              setDialogState(() => maxTokens = v.round());
+                            },
+                          ),
+                        ),
+                        SizedBox(
+                          width: 50,
+                          child: Text(maxTokens.toString()),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Botón de probar conexión
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.wifi_tethering, size: 18),
+                        label: const Text('Probar conexión'),
+                        onPressed: () async {
+                          final testConfig = ApiConfig(
+                            baseUrl: baseUrlController.text.trim(),
+                            model: modelController.text.trim(),
+                            apiKey: apiKeyController.text.trim(),
+                            temperature: temperature,
+                            maxTokens: maxTokens,
+                            mode: mode,
+                          );
+                          final service = LLMService(config: testConfig);
+                          final ok = await service.checkHealth();
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(
+                                content: Text(ok
+                                    ? '✅ Conexión exitosa con ${testConfig.model}'
+                                    : '❌ No se pudo conectar. Verifica la URL y que el servidor esté corriendo.'),
+                                backgroundColor:
+                                    ok ? AppTheme.primaryGreen : Colors.redAccent,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Cancelar'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    final config = ApiConfig(
+                      baseUrl: baseUrlController.text.trim(),
+                      model: modelController.text.trim(),
+                      apiKey: apiKeyController.text.trim(),
+                      temperature: temperature,
+                      maxTokens: maxTokens,
+                      mode: mode,
+                    );
+                    Navigator.pop(ctx, config);
+                  },
+                  child: const Text('Guardar'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result != null) {
+      await _storage.saveApiConfig(result);
+      setState(() => _apiConfig = result);
+      _checkLlmConnection();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Configuración LLM guardada.'),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -71,6 +293,67 @@ class _AjustesScreenState extends State<AjustesScreen> {
                         // Editar perfil (próxima versión)
                       },
                     ),
+                  ),
+                ),
+
+                const SizedBox(height: 24),
+
+                // Sección: LLM (Asistente IA)
+                _buildSectionHeader('Asistente IA (LLM)'),
+                Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: [
+                      ListTile(
+                        leading: Icon(
+                          _llmConnected
+                              ? Icons.check_circle
+                              : Icons.error_outline,
+                          color: _llmConnected
+                              ? AppTheme.primaryGreen
+                              : Colors.orange,
+                        ),
+                        title: const Text('Servidor LLM'),
+                        subtitle: Text(
+                          _checkingLlm
+                              ? 'Verificando conexión...'
+                              : (_llmConnected
+                                  ? 'Conectado a ${_apiConfig.model}'
+                                  : 'No conectado — usando modo demo'),
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        trailing: _checkingLlm
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.chevron_right),
+                        onTap: _showLlmConfigDialog,
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.dns_outlined),
+                        title: const Text('URL Base'),
+                        subtitle: Text(
+                          _apiConfig.baseUrl,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        onTap: _showLlmConfigDialog,
+                      ),
+                      const Divider(height: 1, indent: 16, endIndent: 16),
+                      ListTile(
+                        leading: const Icon(Icons.smart_toy_outlined),
+                        title: const Text('Modelo'),
+                        subtitle: Text(
+                          _apiConfig.model,
+                          style: const TextStyle(fontSize: 13),
+                        ),
+                        onTap: _showLlmConfigDialog,
+                      ),
+                    ],
                   ),
                 ),
 

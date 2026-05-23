@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/widgets/conducta_parser.dart';
+import 'package:tea_companame/widgets/conducta_parser.dart';
 
 void main() {
   group('ConductaParser - Extracción de bloques', () {
