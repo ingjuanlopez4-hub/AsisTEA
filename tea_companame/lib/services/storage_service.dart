@@ -80,6 +80,12 @@ class StorageService {
   // ================================================================
 
   Future<void> insertConductaRecord(ConductaRecord record) async {
+    // Deduplicación: verificar si ya existe un registro similar
+    if (await _isDuplicateRecord(record)) {
+      print('[StorageService] Duplicate record detected, skipping: ${record.recordId}');
+      return;
+    }
+    
     if (_useWeb) {
       final items = await _webGetList('conducta_records');
       items.add(record.toJson());
@@ -92,6 +98,26 @@ class StorageService {
         print('[StorageService] Error inserting record: $e');
       }
     }
+  }
+
+  /// Verifica si un registro es duplicado comparando fechaNormalizada, tipo y descripción
+  Future<bool> _isDuplicateRecord(ConductaRecord newRecord) async {
+    final existingRecords = await getConductaRecords(childId: newRecord.childId);
+    
+    for (final existing in existingRecords) {
+      // Mismo día normalizado, mismo tipo y descripción similar
+      if (existing.fechaNormalizada == newRecord.fechaNormalizada &&
+          existing.tipo == newRecord.tipo &&
+          _normalizeString(existing.descripcion) == _normalizeString(newRecord.descripcion)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Normaliza string para comparación: lowercase, sin espacios extras
+  String _normalizeString(String str) {
+    return str.toLowerCase().trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 
   Future<List<ConductaRecord>> getConductaRecords({String? childId}) async {
