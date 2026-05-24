@@ -4,6 +4,7 @@ import '../config/theme.dart';
 import '../models/message.dart';
 import '../models/child_profile.dart';
 import '../models/api_config.dart';
+import '../models/conducta_record.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/child_selector.dart';
 import '../widgets/conducta_parser.dart';
@@ -193,6 +194,29 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           DateTime.now(),
         );
         block['childId'] = _activeChild?.childId;
+        
+        // Crear y guardar el registro de conducta
+        final record = ConductaRecord(
+          recordId: _uuid.v4(),
+          childId: _activeChild!.childId,
+          userId: 'default_user',
+          source: 'auto',
+          conversationId: displayMessage.id,
+          fecha: block['fecha'] as String? ?? 'hoy',
+          fechaNormalizada: block['fechaNormalizada'] as String,
+          tipo: block['tipo'] as String? ?? 'otro',
+          descripcion: block['descripcion'] as String? ?? '',
+          intensidad: block['intensidad'] as String? ?? 'no_especificada',
+          duracion: block['duracion'] as String? ?? '',
+          desencadenantes: block['desencadenantes'] != null 
+              ? List<String>.from(block['desencadenantes'])
+              : [],
+          contexto: block['contexto'] as String? ?? '',
+          estrategiasAplicadas: block['estrategiasAplicadas'] as String? ?? '',
+          resultado: block['resultado'] as String? ?? '',
+        );
+        
+        await _storage.insertConductaRecord(record);
       }
     }
 
